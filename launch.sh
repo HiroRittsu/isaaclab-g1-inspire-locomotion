@@ -9,6 +9,64 @@ TB_PID_FILE="$ROOT_DIR/outputs/tensorboard.pid"
 TB_LOG_FILE="$ROOT_DIR/outputs/tensorboard.log"
 DEFAULT_S3_ROOT="s3://isaacsim-survey/isaaclab-g1-inspire-locomotion"
 
+usage() {
+  cat <<'EOF'
+usage: launch.sh {up|down|shell|train|play|tensorboard|tensorboard-stop|tensorboard-status} ...
+
+commands:
+  up
+    Start the Isaac Lab docker compose service.
+
+  down
+    Stop the Isaac Lab docker compose service.
+
+  shell
+    Open a shell inside the Isaac Lab container.
+
+  train [args...]
+    Run training inside the container.
+    Common args:
+      --mode {default|advanced|loose_termination|unitree_rewards}
+      --headless
+      --num_envs N
+      --video
+      --video_length N
+      --video_interval N
+      --max_iterations N
+      --resume --load_run RUN --checkpoint FILE
+      --no-s3
+      --s3-uri s3://...
+      --video-sync-interval SEC
+
+    Notes:
+      - If --video is enabled and --video_interval is omitted, the script sets an interval
+        that targets about 20 videos over the whole training run.
+      - Train videos are uploaded to S3 automatically by default.
+
+  play [args...]
+    Run policy playback inside the container.
+    Common args:
+      --mode {default|advanced|loose_termination|unitree_rewards}
+      --video
+      --checkpoint FILE
+      --load_run RUN
+      --no-s3
+      --s3-uri s3://...
+
+    Notes:
+      - The latest play video is uploaded to S3 automatically by default.
+
+  tensorboard [port]
+    Start TensorBoard on the host network. Default port is 6006.
+
+  tensorboard-stop
+    Stop TensorBoard.
+
+  tensorboard-status
+    Show TensorBoard status.
+EOF
+}
+
 ensure_up() {
   docker compose --env-file "$ROOT_DIR/docker/.env" -f "$COMPOSE_FILE" up -d
 }
@@ -211,7 +269,7 @@ tensorboard_status() {
 
 cmd="${1:-}"
 if [[ -z "$cmd" ]]; then
-  echo "usage: $0 {up|down|shell|train|play|tensorboard|tensorboard-stop|tensorboard-status} ..." >&2
+  usage >&2
   exit 1
 fi
 shift || true
@@ -331,6 +389,7 @@ case "$cmd" in
     ;;
   *)
     echo "unknown command: $cmd" >&2
+    usage >&2
     exit 1
     ;;
 esac
