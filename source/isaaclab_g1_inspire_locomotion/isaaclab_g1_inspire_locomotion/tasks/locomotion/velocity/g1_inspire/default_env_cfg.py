@@ -53,33 +53,42 @@ class G1InspireFlatDefaultEnvCfg(G1FlatEnvCfg):
             "robot", joint_names=["waist_yaw_joint", "waist_roll_joint", "waist_pitch_joint"]
         )
         self.rewards.joint_deviation_fingers = None
-        self.rewards.feet_air_time_balance = RewTerm(
-            func=custom_mdp.feet_air_time_balance_penalty,
-            weight=-0.05,
+        self.rewards.action_rate_l2.weight = -0.05
+        self.rewards.flat_orientation_l2.weight = -5.0
+        self.rewards.feet_slide.weight = -0.2
+        self.rewards.base_height = RewTerm(func=base_mdp.base_height_l2, weight=-10.0, params={"target_height": 0.78})
+        self.rewards.gait = RewTerm(
+            func=custom_mdp.feet_gait,
+            weight=0.5,
             params={
+                "period": 0.8,
+                "offset": [0.0, 0.5],
+                "threshold": 0.55,
                 "command_name": "base_velocity",
-                "sensor_cfg": SceneEntityCfg(
-                    "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
-                ),
-                "max_err": 0.6,
+                "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
+            },
+        )
+        self.rewards.feet_clearance = RewTerm(
+            func=custom_mdp.foot_clearance_reward,
+            weight=1.0,
+            params={
+                "std": 0.05,
+                "tanh_mult": 2.0,
+                "target_height": 0.1,
+                "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
             },
         )
 
         self.terminations.base_contact.params["sensor_cfg"] = SceneEntityCfg(
             "contact_forces",
-            body_names=["torso_link", "pelvis", "pelvis_contour_link"],
+            body_names="torso_link",
         )
-        self.terminations.bad_orientation = DoneTerm(
-            func=base_mdp.bad_orientation,
-            params={"limit_angle": 0.8, "asset_cfg": SceneEntityCfg("robot")},
-        )
-        self.terminations.pelvis_height = DoneTerm(
+        self.terminations.bad_orientation = None
+        self.terminations.pelvis_height = None
+        self.terminations.torso_height = None
+        self.terminations.base_height = DoneTerm(
             func=base_mdp.root_height_below_minimum,
-            params={"minimum_height": 0.5, "asset_cfg": SceneEntityCfg("robot")},
-        )
-        self.terminations.torso_height = DoneTerm(
-            func=custom_mdp.body_height_below_minimum,
-            params={"minimum_height": 0.58, "asset_cfg": SceneEntityCfg("robot", body_names=["torso_link"])},
+            params={"minimum_height": 0.2, "asset_cfg": SceneEntityCfg("robot")},
         )
 
 

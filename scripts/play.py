@@ -18,6 +18,8 @@ if str(OFFICIAL_RSL_RL_DIR) not in sys.path:
 TASK_BY_MODE = {
     "default": "Isaac-G1-Inspire-Flat-Default-v0",
     "advanced": "Isaac-G1-Inspire-Flat-Advanced-v0",
+    "loose_termination": "Isaac-G1-Inspire-Flat-LooseTermination-v0",
+    "unitree_rewards": "Isaac-G1-Inspire-Flat-UnitreeRewards-v0",
 }
 
 parser = argparse.ArgumentParser(add_help=False)
