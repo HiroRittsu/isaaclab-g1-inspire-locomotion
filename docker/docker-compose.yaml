@@ -1,0 +1,57 @@
+services:
+  isaaclab:
+    image: ${ISAACLAB_IMAGE}
+    container_name: isaaclab-g1-inspire-locomotion
+    network_mode: host
+    ipc: host
+    entrypoint: bash
+    stdin_open: true
+    tty: true
+    working_dir: ${DOCKER_EXT_PATH}
+    environment:
+      - ACCEPT_EULA=Y
+      - OMNI_KIT_ALLOW_ROOT=1
+      - UNITREE_ROS_DIR=${DOCKER_UNITREE_ROS_PATH}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+    gpus: all
+    volumes:
+      - type: bind
+        source: ..
+        target: ${DOCKER_EXT_PATH}
+      - type: bind
+        source: /home/ubuntu/unitree_ros
+        target: ${DOCKER_UNITREE_ROS_PATH}
+      - type: bind
+        source: /home/ubuntu/docker/isaac-lab/cache/kit
+        target: /isaac-sim/kit/cache
+      - type: bind
+        source: /home/ubuntu/docker/isaac-lab/cache/ov
+        target: ${DOCKER_USER_HOME}/.cache/ov
+      - type: bind
+        source: /home/ubuntu/docker/isaac-lab/cache/pip
+        target: ${DOCKER_USER_HOME}/.cache/pip
+      - type: bind
+        source: /home/ubuntu/docker/isaac-lab/cache/gl
+        target: ${DOCKER_USER_HOME}/.cache/nvidia/GLCache
+      - type: bind
+        source: /home/ubuntu/docker/isaac-lab/cache/compute
+        target: ${DOCKER_USER_HOME}/.nv/ComputeCache
+      - type: bind
+        source: /home/ubuntu/docker/isaac-lab/logs/omniverse
+        target: ${DOCKER_USER_HOME}/.nvidia-omniverse/logs
+      - type: bind
+        source: /home/ubuntu/docker/isaac-lab/logs/kit
+        target: /isaac-sim/kit/logs/Kit/Isaac-Sim
+      - type: bind
+        source: /home/ubuntu/docker/isaac-lab/data
+        target: ${DOCKER_USER_HOME}/.local/share/ov/data
+      - type: bind
+        source: /home/ubuntu/docker/isaac-lab/documents
+        target: ${DOCKER_USER_HOME}/Documents
+      - type: bind
+        source: ../logs
+        target: ${DOCKER_ISAACLAB_PATH}/logs
+      - type: bind
+        source: ../outputs
+        target: ${DOCKER_EXT_PATH}/outputs
+    command: ["-lc", "mkdir -p /root/.cache/pip /root/.cache/ov /root/.cache/nvidia/GLCache /root/.nv/ComputeCache /root/.nvidia-omniverse/logs /isaac-sim/kit/logs/Kit/Isaac-Sim /root/.local/share/ov/data /root/Documents && sleep infinity"]

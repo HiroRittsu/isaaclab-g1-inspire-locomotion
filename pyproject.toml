@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "isaaclab-g1-inspire-locomotion"
+version = "0.1.0"
+description = "External Isaac Lab tasks for G1 Inspire locomotion"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools]
+package-dir = {"" = "source/isaaclab_g1_inspire_locomotion"}
+
+[tool.setuptools.packages.find]
+where = ["source/isaaclab_g1_inspire_locomotion"]
