@@ -242,6 +242,24 @@ def main():
     parser.add_argument("--video-height", type=int, default=360)
     parser.add_argument("--camera-position", type=float, nargs=3, default=(2.5, -2.5, 1.8))
     parser.add_argument("--camera-target", type=float, nargs=3, default=(0.4, 0.0, 0.85))
+    parser.add_argument(
+        "--ui-render-interval",
+        type=int,
+        default=0,
+        help="Render the GUI every N physics steps. Defaults to decimation when GUI is enabled.",
+    )
+    parser.add_argument(
+        "--video-render-interval",
+        type=int,
+        default=0,
+        help="Render/capture video every N physics steps. Defaults to decimation when recording.",
+    )
+    parser.add_argument(
+        "--min-frame-rate",
+        type=int,
+        default=1,
+        help="Value for /persistent/simulation/minFrameRate to reduce GUI-induced sim clamping.",
+    )
     args = parser.parse_args()
 
     simulation_app = create_simulation_app(args.headless, args.record_video)
@@ -255,6 +273,7 @@ def main():
         log("Importing imageio")
         import imageio.v2 as imageio
         log("Importing Isaac Sim core APIs")
+        import carb
         from isaacsim.core.api import World
         from isaacsim.core.prims import SingleArticulation
         from isaacsim.core.utils.prims import define_prim
@@ -276,10 +295,14 @@ def main():
         sim_dt = float(env_yaml["sim"]["dt"])
         decimation = int(env_yaml["decimation"])
         render_dt = sim_dt * decimation
+        ui_render_interval = args.ui_render_interval if args.ui_render_interval > 0 else decimation
+        video_render_interval = args.video_render_interval if args.video_render_interval > 0 else decimation
         command_cfg = env_yaml["commands"]["base_velocity"]
         heading_kp = float(command_cfg["heading_control_stiffness"])
         ang_vel_range = tuple(float(v) for v in command_cfg["ranges"]["ang_vel_z"])
         action_scale = float(env_yaml["actions"]["joint_pos"]["scale"])
+
+        carb.settings.get_settings().set("/persistent/simulation/minFrameRate", int(args.min_frame_rate))
 
         log("Creating world")
         world = World(stage_units_in_meters=1.0, physics_dt=sim_dt, rendering_dt=render_dt)
@@ -370,6 +393,11 @@ def main():
         log(f"Loaded usd from: {usd_path}")
         log(f"sim_dt={sim_dt}, decimation={decimation}, render_dt={render_dt}")
         log(f"action_scale={action_scale}, heading_kp={heading_kp}, ang_vel_range={ang_vel_range}")
+        log(
+            f"ui_render_interval={ui_render_interval}, "
+            f"video_render_interval={video_render_interval}, "
+            f"min_frame_rate={args.min_frame_rate}"
+        )
         log(f"num_dof={robot.num_dof}, action_dim={len(ACTION_JOINT_NAMES)}")
         if args.record_video:
             log(f"Recording video to: {video_path}")
@@ -415,9 +443,14 @@ def main():
                 joint_targets[joint_idx] = default_pos[joint_idx] + action_scale * raw_action[action_idx]
 
             robot.apply_action(ArticulationAction(joint_positions=joint_targets))
-            should_render = (video_writer is not None and step % decimation == 0) or (not args.headless)
-            world.step(render=should_render)
-            if video_writer is not None and step % decimation == 0:
+            should_render_ui = (not args.headless) and (step % ui_render_interval == 0)
+            should_render_video = (video_writer is not None) and (step % video_render_interval == 0)
+            world.step(render=False)
+
+            if should_render_ui or should_render_video:
+                world.render()
+
+            if should_render_video:
                 frame = rgb_annotator.get_data()
                 frame = np.frombuffer(frame, dtype=np.uint8).reshape(*frame.shape)
                 if frame.size == 0:

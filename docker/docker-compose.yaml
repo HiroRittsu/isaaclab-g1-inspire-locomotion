@@ -14,7 +14,7 @@ services:
       - UNITREE_ROS_DIR=${DOCKER_UNITREE_ROS_PATH}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
       - DISPLAY=${HOST_DISPLAY:-:0}
-      - XAUTHORITY=${DOCKER_XAUTHORITY_PATH}
+      - XAUTHORITY=${DOCKER_XAUTHORITY_DIR}/desktop.xauth
     gpus: all
     volumes:
       - type: bind
@@ -24,8 +24,8 @@ services:
         source: /tmp/.X11-unix
         target: /tmp/.X11-unix
       - type: bind
-        source: ${HOST_XAUTHORITY_PATH}
-        target: ${DOCKER_XAUTHORITY_PATH}
+        source: ${HOST_XAUTHORITY_DIR}
+        target: ${DOCKER_XAUTHORITY_DIR}
         read_only: true
       - type: bind
         source: /home/ubuntu/unitree_ros

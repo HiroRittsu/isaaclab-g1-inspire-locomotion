@@ -114,7 +114,7 @@ bash launch.sh up
 
 2. 必要なら `docker/.env` を確認する。
    - 初回は `launch.sh` が [docker/.env.example](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/docker/.env.example) を自動コピーする。
-   - DCV GUI を使う場合は `HOST_DISPLAY` と `HOST_XAUTHORITY_PATH` をホストに合わせる。
+   - DCV GUI を使う場合は `HOST_DISPLAY` と `HOST_XAUTHORITY_DIR` をホストに合わせる。
 
 3. USD を再生成したい場合だけ変換を実行する。
 
@@ -166,6 +166,30 @@ cd /workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion &&
 7. GUI ありで確認したい場合は `--headless` を外す。
    - DCV 上の標準 GUI を使う場合も同じコマンドでよい。
    - 録画する場合は `--record-video --video-output outputs/g1_standalone.mp4` を追加する。
+
+## GUI 安定化メモ
+
+standalone deploy 自体は headless では安定していたが、GUI ありでは短時間で転倒していた。
+原因は policy や学習 run そのものではなく、GUI 実行時だけ simulation loop が別物になっていたことだった。
+
+- 悪かった構成
+  - `world.step(render=True)` や `simulation_app.update()` により、描画更新が physics/control loop に混ざっていた。
+  - GUI では `isaaclab.python.kit` が動き、viewport や UI、render 系 extension の更新が loop に入っていた。
+  - その結果、headless と GUI で state の時間発展が変わり、heading が早い段階で崩れて転倒していた。
+
+- 解消した構成
+  - physics は常に `world.step(render=False)` だけで進める。
+  - GUI 更新は `simulation_app.update()` ではなく `world.render()` に分離する。
+  - GUI 描画周期は physics 毎ではなく、少なくとも `decimation` 周期に落とす。
+  - `/persistent/simulation/minFrameRate=1` を設定して、GUI 負荷による simulation clamping の影響を下げる。
+  - DCV の X11 認証は xauth ファイルを直接 bind するのではなく、DCV のディレクトリごと mount する。
+
+- 確認結果
+  - headless では 5000 step 以上安定して歩行した。
+  - GUI でも上記の修正後は、以前のような即時転倒が解消した。
+
+要点は、`simulation が主、GUI はその結果を読むだけ` の構成に寄せること。
+描画が simulation を駆動し始めると、headless では再現しない不安定性が出やすい。
 
 ## Deploy Reproducibility Notes
 
