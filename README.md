@@ -12,6 +12,7 @@ Modes:
 
 - Isaac Lab runs through the docker compose service in [docker/docker-compose.yaml](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/docker/docker-compose.yaml)
 - Main entrypoint is [launch.sh](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/launch.sh)
+- Host-specific docker settings live in `docker/.env`; if missing, `launch.sh` copies [docker/.env.example](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/docker/.env.example) automatically.
 - TensorBoard reads:
   - `/workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion/logs`
 - Default S3 root:
@@ -100,3 +101,27 @@ Notes:
 Tracked checkpoint artifact for the latest `default` policy:
 
 - [model_1499.pt](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/artifacts/checkpoints/default/model_1499.pt)
+
+## Deploy Reproducibility Notes
+
+将来 Isaac Sim に standalone deploy することを考えると、学習時点で以下を固定または保存しておくと、
+deploy 時の曖昧さをかなり減らせる。
+
+- action joint の指定は、順序が重要な場合は regex だけでなく明示的な joint 名リストを使う。
+- 各 run ごとに、学習環境で実際に解決されたロボット全 DoF 順を保存する。
+- 各 run ごとに、action manager が実際に解決した action joint 順を保存する。
+- 各 run ごとに、observation layout を保存する。
+  - term の並び順
+  - 各 term の次元
+  - joint ベース observation block の joint 順
+- raw checkpoint だけでなく、`policy.pt` も各 run で自動 export する。
+- 各 run ごとに、deploy 用の manifest を小さくてもよいので保存する。
+  - USD path または asset version
+  - `dt`
+  - `decimation`
+  - action scale と offset mode
+  - heading ベース yaw か direct yaw-rate かといった command mode
+  - default joint pose
+  - terrain と ground friction 設定
+- もし deploy 側で direct yaw-rate command を使う予定なら、学習時から heading 由来 yaw ではなく、
+  その command mode で学習しておく方が安全。

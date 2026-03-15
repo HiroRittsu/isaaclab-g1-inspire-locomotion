@@ -8,6 +8,8 @@ CONTAINER="isaaclab-g1-inspire-locomotion"
 TB_PID_FILE="$ROOT_DIR/outputs/tensorboard.pid"
 TB_LOG_FILE="$ROOT_DIR/outputs/tensorboard.log"
 DEFAULT_S3_ROOT="s3://isaacsim-survey/isaaclab-g1-inspire-locomotion"
+ENV_FILE="$ROOT_DIR/docker/.env"
+ENV_EXAMPLE_FILE="$ROOT_DIR/docker/.env.example"
 
 usage() {
   cat <<'EOF'
@@ -68,18 +70,35 @@ EOF
 }
 
 ensure_up() {
-  docker compose --env-file "$ROOT_DIR/docker/.env" -f "$COMPOSE_FILE" up -d
+  ensure_env_file
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
 }
 
 ensure_installed() {
-  docker compose --env-file "$ROOT_DIR/docker/.env" -f "$COMPOSE_FILE" exec -T "$SERVICE" bash -lc '
+  ensure_env_file
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T "$SERVICE" bash -lc '
     cd /workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion && \
     /isaac-sim/python.sh -m pip install -e . >/tmp/g1_inspire_pip.log 2>&1 || { cat /tmp/g1_inspire_pip.log; exit 1; }
   '
 }
 
 run_in_container() {
-  docker compose --env-file "$ROOT_DIR/docker/.env" -f "$COMPOSE_FILE" exec -T "$SERVICE" bash -lc "$1"
+  ensure_env_file
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T "$SERVICE" bash -lc "$1"
+}
+
+ensure_env_file() {
+  if [[ -f "$ENV_FILE" ]]; then
+    return 0
+  fi
+
+  if [[ ! -f "$ENV_EXAMPLE_FILE" ]]; then
+    echo "missing env template: $ENV_EXAMPLE_FILE" >&2
+    exit 1
+  fi
+
+  cp "$ENV_EXAMPLE_FILE" "$ENV_FILE"
+  echo "created $ENV_FILE from $ENV_EXAMPLE_FILE; adjust host-specific values if needed." >&2
 }
 
 parse_mode_from_args() {

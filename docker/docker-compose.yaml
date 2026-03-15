@@ -13,11 +13,20 @@ services:
       - OMNI_KIT_ALLOW_ROOT=1
       - UNITREE_ROS_DIR=${DOCKER_UNITREE_ROS_PATH}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - DISPLAY=${HOST_DISPLAY:-:0}
+      - XAUTHORITY=${DOCKER_XAUTHORITY_PATH}
     gpus: all
     volumes:
       - type: bind
         source: ..
         target: ${DOCKER_EXT_PATH}
+      - type: bind
+        source: /tmp/.X11-unix
+        target: /tmp/.X11-unix
+      - type: bind
+        source: ${HOST_XAUTHORITY_PATH}
+        target: ${DOCKER_XAUTHORITY_PATH}
+        read_only: true
       - type: bind
         source: /home/ubuntu/unitree_ros
         target: ${DOCKER_UNITREE_ROS_PATH}
