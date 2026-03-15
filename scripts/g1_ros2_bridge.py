@@ -329,6 +329,12 @@ def main():
     parser.add_argument("--action-wait-timeout", type=float, default=0.02)
     parser.add_argument("--startup-timeout", type=float, default=10.0)
     parser.add_argument("--log-interval", type=int, default=100)
+    parser.add_argument(
+        "--ui-render-interval",
+        type=int,
+        default=0,
+        help="Render the GUI every N physics steps. Defaults to decimation when GUI is enabled.",
+    )
     args = parser.parse_args()
 
     simulation_app = create_simulation_app(args.headless)
@@ -346,6 +352,7 @@ def main():
         env_yaml = load_env_yaml(args.env_yaml.resolve())
         sim_dt = float(env_yaml["sim"]["dt"])
         decimation = int(env_yaml["decimation"])
+        ui_render_interval = args.ui_render_interval if args.ui_render_interval > 0 else decimation
         command_cfg = env_yaml["commands"]["base_velocity"]
         heading_kp = float(command_cfg["heading_control_stiffness"])
         ang_vel_range = tuple(float(v) for v in command_cfg["ranges"]["ang_vel_z"])
@@ -455,7 +462,10 @@ def main():
                 joint_targets[joint_idx] = default_pos[joint_idx] + action_scale * raw_action[action_idx]
 
             robot.apply_action(ArticulationAction(joint_positions=joint_targets))
+            should_render_ui = (not args.headless) and (step % ui_render_interval == 0)
             world.step(render=False)
+            if should_render_ui:
+                world.render()
             sim_time_s += sim_dt
 
             if step == 0 or (step + 1) % max(args.log_interval, 1) == 0:

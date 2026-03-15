@@ -54,12 +54,9 @@ services:
         source: ${HOST_ISAAC_CACHE_ROOT:-../.docker-cache}/data
         target: ${DOCKER_USER_HOME}/.local/share/ov/data
       - type: bind
-        source: ${HOST_ISAAC_CACHE_ROOT:-../.docker-cache}/documents
-        target: ${DOCKER_USER_HOME}/Documents
-      - type: bind
         source: ../logs
         target: ${DOCKER_ISAACLAB_PATH}/logs
       - type: bind
         source: ../outputs
         target: ${DOCKER_EXT_PATH}/outputs
-    command: ["-lc", "mkdir -p /root/.cache/pip /root/.cache/ov /root/.cache/nvidia/GLCache /root/.nv/ComputeCache /root/.nvidia-omniverse/logs /isaac-sim/kit/logs/Kit/Isaac-Sim /root/.local/share/ov/data /root/Documents && sleep infinity"]
+    command: ["-lc", "mkdir -p /root/.cache/pip /root/.cache/ov /root/.cache/nvidia/GLCache /root/.nv/ComputeCache /root/.nvidia-omniverse/logs /isaac-sim/kit/logs/Kit/Isaac-Sim /root/.local/share/ov/data && sleep infinity"]
