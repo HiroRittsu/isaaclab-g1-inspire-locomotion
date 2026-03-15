@@ -1,77 +1,79 @@
 # isaaclab-g1-inspire-locomotion
 
-External Isaac Lab tasks for G1 Inspire locomotion training.
+G1 Inspire の locomotion 学習と deploy を扱う Isaac Lab 用の外部タスク集です。
 
-Modes:
-- `default`: simple flat gait bootstrap
-- `advanced`: resume-friendly flat gait with xy/yaw and width penalty
-- `loose_termination`: debug variant with looser termination thresholds
-- `unitree_rewards`: flat variant that imports `unitree_rl_lab`-style reward terms
+## 1. 概要
 
-## Environment
+このリポジトリでは、主に次の 4 つのモードを使います。
 
-- Isaac Lab runs through the docker compose service in [docker/docker-compose.yaml](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/docker/docker-compose.yaml)
-- Main entrypoint is [launch.sh](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/launch.sh)
-- Host-specific docker settings live in `docker/.env`; if missing, `launch.sh` copies [docker/.env.example](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/docker/.env.example) automatically.
-- TensorBoard reads:
-  - `/workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion/logs`
-- Default S3 root:
-  - `s3://isaacsim-survey/isaaclab-g1-inspire-locomotion`
+- `default`: 平地での基本歩容を立ち上げる最小構成
+- `advanced`: `xy/yaw` command と追加 reward を含む拡張構成
+- `loose_termination`: termination 条件を緩めたデバッグ用構成
+- `unitree_rewards`: `unitree_rl_lab` 風の reward を取り込んだ構成
 
-## Common Commands
+## 2. 環境構成
 
-Start container:
+- Isaac Lab 本体の docker compose は `docker/docker-compose.yaml`
+- 外部 ROS2 policy 用の compose は `docker/docker-compose.ros2.yaml`
+- 主な起動入口は `launch.sh`
+- `docker/.env` が無ければ `launch.sh` が `docker/.env.example` を自動コピー
+- TensorBoard の対象ログは `/workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion/logs`
+- 既定の S3 ルートは `s3://isaacsim-survey/isaaclab-g1-inspire-locomotion`
+
+## 3. 基本コマンド
+
+コンテナ起動:
 
 ```bash
 bash launch.sh up
 ```
 
-Open shell in container:
+Isaac Lab コンテナに入る:
 
 ```bash
 bash launch.sh shell
 ```
 
-Run standalone deploy with GUI by default:
+standalone deploy を GUI ありで起動:
 
 ```bash
 bash launch.sh deploy-standalone
 ```
 
-Run direct ROS2 deploy with GUI by default:
+direct ROS2 deploy を GUI ありで起動:
 
 ```bash
 bash launch.sh deploy-ros2
 ```
 
-Run either deploy mode headless:
+headless で起動:
 
 ```bash
 bash launch.sh deploy-standalone --headless
 bash launch.sh deploy-ros2 --headless
 ```
 
-Start TensorBoard:
+TensorBoard 起動:
 
 ```bash
 bash launch.sh tensorboard 6006
 ```
 
-Check TensorBoard:
+TensorBoard 状態確認:
 
 ```bash
 bash launch.sh tensorboard-status
 ```
 
-## Training
+## 4. 学習
 
-Run `default` training with video and automatic S3 upload:
+`default` モードを video 付きで学習:
 
 ```bash
 bash launch.sh train --mode default --headless --num_envs 512 --video
 ```
 
-Run `advanced` training from a checkpoint:
+checkpoint から `advanced` を再開:
 
 ```bash
 bash launch.sh train \
@@ -84,86 +86,93 @@ bash launch.sh train \
   --checkpoint model_1499.pt
 ```
 
-Run without S3 upload:
+S3 upload を無効化:
 
 ```bash
 bash launch.sh train --mode default --headless --num_envs 512 --video --no-s3
 ```
 
-Notes:
-- If `--video` is set and `--video_interval` is omitted, `launch.sh` computes an interval that targets about 20 videos over the whole training run.
-- Train videos are uploaded to S3 automatically by default.
-- Train videos are stored under:
-  - `logs/rsl_rl/<experiment>/<run>/videos/train/`
+補足:
 
-## Play
+- `--video` を付けて `--video_interval` を省略すると、`launch.sh` が全体でおよそ 20 本になるよう自動計算する
+- train video は既定で自動 S3 upload される
+- train video の保存先は `logs/rsl_rl/<experiment>/<run>/videos/train/`
 
-Run playback with video and automatic S3 upload:
+## 5. 再生
+
+video 付きで playback:
 
 ```bash
 bash launch.sh play --mode default --video --load_run 2026-03-12_16-13-20_default --checkpoint model_1499.pt
 ```
 
-Run playback without S3 upload:
+S3 upload なしで playback:
 
 ```bash
 bash launch.sh play --mode advanced --video --no-s3
 ```
 
-Notes:
-- Play videos are stored under:
-  - `logs/rsl_rl/<experiment>/<run>/videos/play/`
-- The latest play video is uploaded to S3 automatically by default.
+補足:
 
-## Artifacts
+- play video の保存先は `logs/rsl_rl/<experiment>/<run>/videos/play/`
+- 最新の play video は既定で自動 S3 upload される
 
-Tracked checkpoint artifact for the latest `default` policy:
+## 6. 同梱 artifact
 
-- [model_1499.pt](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/artifacts/checkpoints/default/model_1499.pt)
-- [policy.pt](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/artifacts/policies/default/policy.pt)
+既定の deploy では、次の artifact をそのまま使えます。
 
-## Standalone Deploy Reproduction
+- `artifacts/checkpoints/default/model_1499.pt`
+- `artifacts/policies/default/policy.pt`
 
-学習 run `2026-03-14_13-45-52_default` を Isaac Sim standalone に再現 deploy する手順。
+## 7. Standalone Deploy
 
-最短手順は次の 1 コマンド。
+学習 run `2026-03-14_13-45-52_default` を Isaac Sim standalone へ再現 deploy する最短手順です。
+
+最短コマンド:
 
 ```bash
 bash launch.sh deploy-standalone
 ```
 
+補足:
+
 - デフォルトは GUI あり
 - `--headless` を付けると headless
-- デフォルトでは repo 同梱の [policy.pt](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/artifacts/policies/default/policy.pt) を使う
-- `--load-run` や `--checkpoint` を指定した場合は、必要なら自動 export
-- 追加の Isaac Sim 引数はそのまま後ろに渡せる
-  - 例: `bash launch.sh deploy-standalone --headless --num-steps 200 --lin-vel-x 0.6`
+- 既定では repo 同梱の `artifacts/policies/default/policy.pt` を使う
+- `--load-run` や `--checkpoint` を付けた場合は、必要なら自動 export する
+- 追加の Isaac Sim 引数はそのまま後ろへ渡せる
+- 例:
 
-明示手順で追いたい場合は以下。
+```bash
+bash launch.sh deploy-standalone --headless --num-steps 200 --lin-vel-x 0.6
+```
 
-1. コンテナを起動する。
+明示手順で追う場合:
+
+1. コンテナを起動する
 
 ```bash
 bash launch.sh up
 ```
 
-2. 必要なら `docker/.env` を確認する。
-   - 初回は `launch.sh` が [docker/.env.example](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/docker/.env.example) を自動コピーする。
-   - DCV GUI を使う場合は `HOST_DISPLAY` と `HOST_XAUTHORITY_DIR` をホストに合わせる。
+2. 必要なら `docker/.env` を確認する
 
-3. USD を再生成したい場合だけ変換を実行する。
+- 初回は `launch.sh` が `docker/.env.example` を自動コピーする
+- DCV GUI を使う場合は `HOST_DISPLAY` と `HOST_XAUTHORITY_DIR` をホストに合わせる
+
+3. 必要な場合のみ USD を再生成する
 
 ```bash
-docker exec -it isaaclab-g1-inspire-locomotion bash -lc '
+docker compose -f docker/docker-compose.yaml exec isaaclab bash -lc '
 cd /workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion &&
 /workspace/isaaclab/isaaclab.sh -p scripts/convert_g1_inspire_usd.py --headless
 '
 ```
 
-4. 学習 checkpoint から TorchScript policy を export する。
+4. 必要な場合のみ TorchScript policy を export する
 
 ```bash
-docker exec -it isaaclab-g1-inspire-locomotion bash -lc '
+docker compose -f docker/docker-compose.yaml exec isaaclab bash -lc '
 cd /workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion &&
 /workspace/isaaclab/isaaclab.sh -p scripts/export_policy_jit.py \
   --headless \
@@ -173,10 +182,10 @@ cd /workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion &&
 '
 ```
 
-5. deploy 前の順序確認を headless で実行する。
+5. deploy 前の順序確認を headless で実行する
 
 ```bash
-docker exec -it isaaclab-g1-inspire-locomotion bash -lc '
+docker compose -f docker/docker-compose.yaml exec isaaclab bash -lc '
 cd /workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion &&
 /workspace/isaaclab/isaaclab.sh -p scripts/check_deploy_headless.py \
   --headless \
@@ -184,104 +193,126 @@ cd /workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion &&
 '
 ```
 
-6. standalone を headless で実行する。
+6. standalone を直接実行する
 
 ```bash
-docker exec -it isaaclab-g1-inspire-locomotion bash -lc '
+docker compose -f docker/docker-compose.yaml exec isaaclab bash -lc '
 cd /workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion &&
 /isaac-sim/python.sh scripts/g1_standalone.py \
   --headless \
   --num-steps 200 \
-  --policy-path logs/rsl_rl/g1_inspire_flat_default/2026-03-14_13-45-52_default/exported/policy.pt \
+  --policy-path artifacts/policies/default/policy.pt \
   --env-yaml logs/rsl_rl/g1_inspire_flat_default/2026-03-14_13-45-52_default/params/env.yaml \
   --usd-path artifacts/usd/g1_inspire_dfq/g1_29dof_rev_1_0_with_inspire_hand_DFQ.usd
 '
 ```
 
-7. GUI ありで確認したい場合は `--headless` を外す。
-   - DCV 上の標準 GUI を使う場合も同じコマンドでよい。
-   - 録画する場合は `--record-video --video-output outputs/g1_standalone.mp4` を追加する。
+7. GUI ありで確認したい場合は `--headless` を外す
 
-## Direct ROS2 Deploy
+- DCV 上の標準 GUI でも同じコマンドでよい
+- 録画したい場合は `--record-video --video-path outputs/g1_standalone.mp4` を追加する
 
-direct ROS2 bridge 方式を最短で試す場合も 1 コマンドでよい。
+## 8. Direct ROS2 Deploy
+
+安定している外部制御系は direct ROS2 bridge 版です。
+
+最短コマンド:
 
 ```bash
 bash launch.sh deploy-ros2
 ```
 
+補足:
+
 - デフォルトは GUI あり
 - `--headless` を付けると headless
-- `isaaclab` と `ros2-policy` の compose service を自動で起動する
-- ROS2 workspace の `g1_policy_controller` は自動 build する
-- デフォルトでは repo 同梱の [policy.pt](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/artifacts/policies/default/policy.pt) を使う
-- `--load-run` や `--checkpoint` を指定した場合は、必要なら自動 export する
-- 追加の Isaac Sim bridge 引数もそのまま後ろに渡せる
-  - 例: `bash launch.sh deploy-ros2 --headless --num-steps 200 --lin-vel-x 0.6`
+- `isaaclab` と `ros2-policy` の compose service を自動起動する
+- ROS2 workspace の `g1_policy_controller` を自動 build する
+- 既定では repo 同梱の `artifacts/policies/default/policy.pt` を使う
+- `--load-run` や `--checkpoint` を付けた場合は、必要なら自動 export する
+- 追加の Isaac Sim bridge 引数はそのまま後ろへ渡せる
+- 例:
 
-実体としては以下を自動化している。
+```bash
+bash launch.sh deploy-ros2 --headless --num-steps 200 --lin-vel-x 0.6
+```
+
+内部で自動実行しているもの:
 
 - `ros2-policy` コンテナで `ros2 run g1_policy_controller policy_node`
 - `isaaclab` コンテナで `scripts/g1_ros2_bridge.py`
 
-現在、安定している外部制御系はこの direct bridge 版で、Action Graph 版はまだ WIP。
+補足:
 
-## GUI 安定化メモ
+- Action Graph 版はまだ WIP
+- すぐに外部 deploy を試すなら direct bridge 版を使う
 
-standalone deploy 自体は headless では安定していたが、GUI ありでは短時間で転倒していた。
-原因は policy や学習 run そのものではなく、GUI 実行時だけ simulation loop が別物になっていたことだった。
+## 9. GUI 安定化メモ
 
-- 悪かった構成
-  - `world.step(render=True)` や `simulation_app.update()` により、描画更新が physics/control loop に混ざっていた。
-  - GUI では `isaaclab.python.kit` が動き、viewport や UI、render 系 extension の更新が loop に入っていた。
-  - その結果、headless と GUI で state の時間発展が変わり、heading が早い段階で崩れて転倒していた。
+standalone deploy は headless では安定していた一方、GUI ありでは初期に転倒していました。
+原因は policy や学習 run ではなく、GUI 実行時だけ simulation loop の責務分離が崩れていたことです。
 
-- 解消した構成
-  - physics は常に `world.step(render=False)` だけで進める。
-  - GUI 更新は `simulation_app.update()` ではなく `world.render()` に分離する。
-  - GUI 描画周期は physics 毎ではなく、少なくとも `decimation` 周期に落とす。
-  - `/persistent/simulation/minFrameRate=1` を設定して、GUI 負荷による simulation clamping の影響を下げる。
-  - DCV の X11 認証は xauth ファイルを直接 bind するのではなく、DCV のディレクトリごと mount する。
+悪かった構成:
 
-- 確認結果
-  - headless では 5000 step 以上安定して歩行した。
-  - GUI でも上記の修正後は、以前のような即時転倒が解消した。
+- `world.step(render=True)` や `simulation_app.update()` により、描画更新が physics/control loop に混ざっていた
+- GUI では `isaaclab.python.kit` が動き、viewport や UI、render 系 extension の更新が loop に入っていた
+- その結果、headless と GUI で状態遷移が変わり、heading が早期に崩れていた
 
-要点は、`simulation が主、GUI はその結果を読むだけ` の構成に寄せること。
-描画が simulation を駆動し始めると、headless では再現しない不安定性が出やすい。
+解消した構成:
 
-## Deploy Reproducibility Notes
+- physics は常に `world.step(render=False)` だけで進める
+- GUI 更新は `simulation_app.update()` ではなく `world.render()` に分離する
+- GUI 描画周期は physics 毎ではなく、少なくとも `decimation` 周期へ落とす
+- `/persistent/simulation/minFrameRate=1` を設定して simulation clamping の影響を下げる
+- DCV の X11 認証は xauth ファイル直指定ではなく、DCV ディレクトリごとの mount にする
 
-将来 Isaac Sim に standalone deploy することを考えると、学習時点で以下を固定または保存しておくと、
-deploy 時の曖昧さをかなり減らせる。
+確認結果:
 
-- action joint の指定は、順序が重要な場合は regex だけでなく明示的な joint 名リストを使う。
-- 各 run ごとに、学習環境で実際に解決されたロボット全 DoF 順を保存する。
-- 各 run ごとに、action manager が実際に解決した action joint 順を保存する。
-- 各 run ごとに、observation layout を保存する。
-  - term の並び順
-  - 各 term の次元
-  - joint ベース observation block の joint 順
-- raw checkpoint だけでなく、`policy.pt` も各 run で自動 export する。
-- 各 run ごとに、deploy 用の manifest を小さくてもよいので保存する。
-  - USD path または asset version
-  - `dt`
-  - `decimation`
-  - action scale と offset mode
-  - heading ベース yaw か direct yaw-rate かといった command mode
-  - default joint pose
-  - terrain と ground friction 設定
-- もし deploy 側で direct yaw-rate command を使う予定なら、学習時から heading 由来 yaw ではなく、
-  その command mode で学習しておく方が安全。
+- headless では 5000 step 以上安定
+- GUI でも上記修正後は即時転倒が解消
 
-## Portability Notes
+要点:
 
-clone 先でも動かしやすいように、docker compose 周りは次の前提に寄せている。
+- `simulation が主、GUI は結果を読むだけ` に寄せる
+- 描画が simulation を駆動し始めると、headless では再現しない不安定性が出やすい
 
-- `docker/.env` が無ければ [docker/.env.example](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/docker/.env.example) を自動コピーする
-- cache はデフォルトで repo 相対の `.docker-cache/` を使う
+## 10. 再現性向上メモ
+
+将来の Isaac Sim deploy を確実にするため、学習時点では次を固定または保存しておくのがよいです。
+
+- action joint 指定は regex だけでなく明示 joint 名リストで残す
+- 学習環境で実際に解決された全 DoF 順を run ごとに保存する
+- action manager が実際に解決した action joint 順を run ごとに保存する
+- observation layout を run ごとに保存する
+- raw checkpoint だけでなく `policy.pt` も自動 export する
+- deploy 用 manifest を保存する
+
+manifest へ入れておくとよい項目:
+
+- USD path または asset version
+- `dt`
+- `decimation`
+- action scale と offset mode
+- heading ベース yaw か direct yaw-rate かという command mode
+- default joint pose
+- terrain と ground friction
+
+補足:
+
+- deploy 側で direct yaw-rate command を使う予定なら、学習時からその command mode に揃える方が安全
+
+## 11. ポータビリティ
+
+別ディレクトリへ clone した場合でも動かしやすいよう、docker compose 周りは次の方針にしています。
+
+- `docker/.env` が無ければ `docker/.env.example` を自動コピーする
+- cache の既定値は repo 相対の `.docker-cache/`
 - compose service は固定 `container_name` を使わない
-- `COMPOSE_PROJECT_NAME` もデフォルト固定しない
+- `COMPOSE_PROJECT_NAME` も既定では固定しない
 
-つまり、別ディレクトリへ clone した場合でも、同じホスト上で元の checkout と衝突しにくい。
-必要なら `docker/.env` に host 固有の `HOST_DISPLAY`, `HOST_XAUTHORITY_DIR`, `HOST_UNITREE_ROS_PATH` だけを上書きすればよい。
+このため、同じホスト上に別 checkout があっても衝突しにくい構成です。
+必要なら `docker/.env` で次だけ host 固有値へ上書きします。
+
+- `HOST_DISPLAY`
+- `HOST_XAUTHORITY_DIR`
+- `HOST_UNITREE_ROS_PATH`
