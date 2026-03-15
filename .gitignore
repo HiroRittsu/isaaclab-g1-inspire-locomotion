@@ -13,3 +13,6 @@ artifacts/usd/**/config.yaml
 logs/rsl_rl/**/exported/
 
 docker/.env
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/

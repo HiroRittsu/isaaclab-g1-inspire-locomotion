@@ -3,8 +3,11 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="$ROOT_DIR/docker/docker-compose.yaml"
+ROS2_COMPOSE_FILE="$ROOT_DIR/docker/docker-compose.ros2.yaml"
 SERVICE="isaaclab"
 CONTAINER="isaaclab-g1-inspire-locomotion"
+ROS2_SERVICE="ros2-policy"
+ROS2_CONTAINER="ros2-g1-policy"
 TB_PID_FILE="$ROOT_DIR/outputs/tensorboard.pid"
 TB_LOG_FILE="$ROOT_DIR/outputs/tensorboard.log"
 DEFAULT_S3_ROOT="s3://isaacsim-survey/isaaclab-g1-inspire-locomotion"
@@ -13,7 +16,7 @@ ENV_EXAMPLE_FILE="$ROOT_DIR/docker/.env.example"
 
 usage() {
   cat <<'EOF'
-usage: launch.sh {up|down|shell|train|play|tensorboard|tensorboard-stop|tensorboard-status} ...
+usage: launch.sh {up|down|shell|ros2-up|ros2-down|ros2-shell|ros2-build|train|play|tensorboard|tensorboard-stop|tensorboard-status} ...
 
 commands:
   up
@@ -24,6 +27,18 @@ commands:
 
   shell
     Open a shell inside the Isaac Lab container.
+
+  ros2-up
+    Build and start the external ROS 2 policy container.
+
+  ros2-down
+    Stop the external ROS 2 policy container.
+
+  ros2-shell
+    Open a shell inside the ROS 2 policy container.
+
+  ros2-build
+    Build the ROS 2 workspace inside the ROS 2 policy container.
 
   train [args...]
     Run training inside the container.
@@ -74,6 +89,11 @@ ensure_up() {
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
 }
 
+ensure_ros2_up() {
+  ensure_env_file
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$ROS2_COMPOSE_FILE" up -d --build "$ROS2_SERVICE"
+}
+
 ensure_installed() {
   ensure_env_file
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T "$SERVICE" bash -lc '
@@ -85,6 +105,11 @@ ensure_installed() {
 run_in_container() {
   ensure_env_file
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T "$SERVICE" bash -lc "$1"
+}
+
+run_in_ros2_container() {
+  ensure_env_file
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$ROS2_COMPOSE_FILE" exec -T "$ROS2_SERVICE" bash -lc "$1"
 }
 
 ensure_env_file() {
@@ -298,12 +323,29 @@ case "$cmd" in
     ensure_up
     ;;
   down)
-    docker compose --env-file "$ROOT_DIR/docker/.env" -f "$COMPOSE_FILE" down
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down
     ;;
   shell)
     ensure_up
     ensure_installed
-    docker compose --env-file "$ROOT_DIR/docker/.env" -f "$COMPOSE_FILE" exec "$SERVICE" bash
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec "$SERVICE" bash
+    ;;
+  ros2-up)
+    ensure_up
+    ensure_ros2_up
+    ;;
+  ros2-down)
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$ROS2_COMPOSE_FILE" rm -sf "$ROS2_SERVICE"
+    ;;
+  ros2-shell)
+    ensure_up
+    ensure_ros2_up
+    docker exec -it "$ROS2_CONTAINER" bash
+    ;;
+  ros2-build)
+    ensure_up
+    ensure_ros2_up
+    run_in_ros2_container "source /opt/ros/humble/setup.bash && cd /workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion/ros2_ws && colcon build --symlink-install"
     ;;
   train)
     ensure_up

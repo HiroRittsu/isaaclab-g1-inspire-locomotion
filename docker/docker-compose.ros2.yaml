@@ -1,0 +1,29 @@
+services:
+  ros2-policy:
+    build:
+      context: ..
+      dockerfile: docker/ros2-policy/Dockerfile
+    container_name: ros2-g1-policy
+    network_mode: host
+    ipc: host
+    entrypoint: bash
+    stdin_open: true
+    tty: true
+    working_dir: /workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - ROS_DISTRO=humble
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - FASTRTPS_DEFAULT_PROFILES_FILE=/workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion/ros2_ws/fastdds.xml
+    volumes:
+      - type: bind
+        source: ..
+        target: /workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion
+      - type: bind
+        source: /home/ubuntu/docker/ros2-g1-policy/pip
+        target: /root/.cache/pip
+    command:
+      [
+        "-lc",
+        "mkdir -p /root/.cache/pip && source /opt/ros/humble/setup.bash && sleep infinity",
+      ]
