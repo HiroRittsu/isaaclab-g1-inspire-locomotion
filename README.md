@@ -32,6 +32,25 @@ Open shell in container:
 bash launch.sh shell
 ```
 
+Run standalone deploy with GUI by default:
+
+```bash
+bash launch.sh deploy-standalone
+```
+
+Run direct ROS2 deploy with GUI by default:
+
+```bash
+bash launch.sh deploy-ros2
+```
+
+Run either deploy mode headless:
+
+```bash
+bash launch.sh deploy-standalone --headless
+bash launch.sh deploy-ros2 --headless
+```
+
 Start TensorBoard:
 
 ```bash
@@ -101,10 +120,26 @@ Notes:
 Tracked checkpoint artifact for the latest `default` policy:
 
 - [model_1499.pt](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/artifacts/checkpoints/default/model_1499.pt)
+- [policy.pt](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/artifacts/policies/default/policy.pt)
 
 ## Standalone Deploy Reproduction
 
 学習 run `2026-03-14_13-45-52_default` を Isaac Sim standalone に再現 deploy する手順。
+
+最短手順は次の 1 コマンド。
+
+```bash
+bash launch.sh deploy-standalone
+```
+
+- デフォルトは GUI あり
+- `--headless` を付けると headless
+- デフォルトでは repo 同梱の [policy.pt](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/artifacts/policies/default/policy.pt) を使う
+- `--load-run` や `--checkpoint` を指定した場合は、必要なら自動 export
+- 追加の Isaac Sim 引数はそのまま後ろに渡せる
+  - 例: `bash launch.sh deploy-standalone --headless --num-steps 200 --lin-vel-x 0.6`
+
+明示手順で追いたい場合は以下。
 
 1. コンテナを起動する。
 
@@ -167,6 +202,30 @@ cd /workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion &&
    - DCV 上の標準 GUI を使う場合も同じコマンドでよい。
    - 録画する場合は `--record-video --video-output outputs/g1_standalone.mp4` を追加する。
 
+## Direct ROS2 Deploy
+
+direct ROS2 bridge 方式を最短で試す場合も 1 コマンドでよい。
+
+```bash
+bash launch.sh deploy-ros2
+```
+
+- デフォルトは GUI あり
+- `--headless` を付けると headless
+- `isaaclab` と `ros2-policy` の compose service を自動で起動する
+- ROS2 workspace の `g1_policy_controller` は自動 build する
+- デフォルトでは repo 同梱の [policy.pt](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/artifacts/policies/default/policy.pt) を使う
+- `--load-run` や `--checkpoint` を指定した場合は、必要なら自動 export する
+- 追加の Isaac Sim bridge 引数もそのまま後ろに渡せる
+  - 例: `bash launch.sh deploy-ros2 --headless --num-steps 200 --lin-vel-x 0.6`
+
+実体としては以下を自動化している。
+
+- `ros2-policy` コンテナで `ros2 run g1_policy_controller policy_node`
+- `isaaclab` コンテナで `scripts/g1_ros2_bridge.py`
+
+現在、安定している外部制御系はこの direct bridge 版で、Action Graph 版はまだ WIP。
+
 ## GUI 安定化メモ
 
 standalone deploy 自体は headless では安定していたが、GUI ありでは短時間で転倒していた。
@@ -214,3 +273,15 @@ deploy 時の曖昧さをかなり減らせる。
   - terrain と ground friction 設定
 - もし deploy 側で direct yaw-rate command を使う予定なら、学習時から heading 由来 yaw ではなく、
   その command mode で学習しておく方が安全。
+
+## Portability Notes
+
+clone 先でも動かしやすいように、docker compose 周りは次の前提に寄せている。
+
+- `docker/.env` が無ければ [docker/.env.example](/home/ubuntu/isaaclab_ws/isaaclab-g1-inspire-locomotion/docker/.env.example) を自動コピーする
+- cache はデフォルトで repo 相対の `.docker-cache/` を使う
+- compose service は固定 `container_name` を使わない
+- `COMPOSE_PROJECT_NAME` もデフォルト固定しない
+
+つまり、別ディレクトリへ clone した場合でも、同じホスト上で元の checkout と衝突しにくい。
+必要なら `docker/.env` に host 固有の `HOST_DISPLAY`, `HOST_XAUTHORITY_DIR`, `HOST_UNITREE_ROS_PATH` だけを上書きすればよい。

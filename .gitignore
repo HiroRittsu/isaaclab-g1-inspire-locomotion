@@ -8,6 +8,7 @@ __pycache__/
 
 logs/
 outputs/
+.docker-cache/
 artifacts/usd/**/.asset_hash
 artifacts/usd/**/config.yaml
 logs/rsl_rl/**/exported/

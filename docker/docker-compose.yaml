@@ -1,7 +1,6 @@
 services:
   isaaclab:
     image: ${ISAACLAB_IMAGE}
-    container_name: isaaclab-g1-inspire-locomotion
     network_mode: host
     ipc: host
     entrypoint: bash
@@ -28,34 +27,34 @@ services:
         target: ${DOCKER_XAUTHORITY_DIR}
         read_only: true
       - type: bind
-        source: /home/ubuntu/unitree_ros
+        source: ${HOST_UNITREE_ROS_PATH:-/home/ubuntu/unitree_ros}
         target: ${DOCKER_UNITREE_ROS_PATH}
       - type: bind
-        source: /home/ubuntu/docker/isaac-lab/cache/kit
+        source: ${HOST_ISAAC_CACHE_ROOT:-../.docker-cache}/kit
         target: /isaac-sim/kit/cache
       - type: bind
-        source: /home/ubuntu/docker/isaac-lab/cache/ov
+        source: ${HOST_ISAAC_CACHE_ROOT:-../.docker-cache}/ov
         target: ${DOCKER_USER_HOME}/.cache/ov
       - type: bind
-        source: /home/ubuntu/docker/isaac-lab/cache/pip
+        source: ${HOST_ISAAC_CACHE_ROOT:-../.docker-cache}/pip
         target: ${DOCKER_USER_HOME}/.cache/pip
       - type: bind
-        source: /home/ubuntu/docker/isaac-lab/cache/gl
+        source: ${HOST_ISAAC_CACHE_ROOT:-../.docker-cache}/gl
         target: ${DOCKER_USER_HOME}/.cache/nvidia/GLCache
       - type: bind
-        source: /home/ubuntu/docker/isaac-lab/cache/compute
+        source: ${HOST_ISAAC_CACHE_ROOT:-../.docker-cache}/compute
         target: ${DOCKER_USER_HOME}/.nv/ComputeCache
       - type: bind
-        source: /home/ubuntu/docker/isaac-lab/logs/omniverse
+        source: ${HOST_ISAAC_CACHE_ROOT:-../.docker-cache}/logs/omniverse
         target: ${DOCKER_USER_HOME}/.nvidia-omniverse/logs
       - type: bind
-        source: /home/ubuntu/docker/isaac-lab/logs/kit
+        source: ${HOST_ISAAC_CACHE_ROOT:-../.docker-cache}/logs/kit
         target: /isaac-sim/kit/logs/Kit/Isaac-Sim
       - type: bind
-        source: /home/ubuntu/docker/isaac-lab/data
+        source: ${HOST_ISAAC_CACHE_ROOT:-../.docker-cache}/data
         target: ${DOCKER_USER_HOME}/.local/share/ov/data
       - type: bind
-        source: /home/ubuntu/docker/isaac-lab/documents
+        source: ${HOST_ISAAC_CACHE_ROOT:-../.docker-cache}/documents
         target: ${DOCKER_USER_HOME}/Documents
       - type: bind
         source: ../logs

@@ -3,7 +3,6 @@ services:
     build:
       context: ..
       dockerfile: docker/ros2-policy/Dockerfile
-    container_name: ros2-g1-policy
     network_mode: host
     ipc: host
     entrypoint: bash
@@ -20,7 +19,7 @@ services:
         source: ..
         target: /workspace/isaaclab_ws/isaaclab-g1-inspire-locomotion
       - type: bind
-        source: /home/ubuntu/docker/ros2-g1-policy/pip
+        source: ${HOST_ROS2_CACHE_ROOT:-../.docker-cache/ros2-policy}/pip
         target: /root/.cache/pip
     command:
       [
