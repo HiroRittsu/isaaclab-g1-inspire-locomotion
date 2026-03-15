@@ -7,6 +7,7 @@ import os
 import pathlib
 import re
 import sys
+import time
 from typing import Sequence
 
 import numpy as np
@@ -127,6 +128,22 @@ def load_env_yaml(path: pathlib.Path) -> dict:
         return yaml.load(f, Loader=SafeLoaderIgnoreUnknown)
 
 
+def wait_for_ros2_context_ready(simulation_app, og, graph_path: str = "/ActionGraph/Context", max_wait_s: float = 30.0) -> None:
+    deadline = time.monotonic() + max_wait_s
+    attr = og.Controller.attribute(f"{graph_path}.outputs:context")
+
+    while time.monotonic() < deadline:
+        try:
+            value = og.Controller.get(attr)
+        except Exception:
+            value = None
+        if value not in (None, 0):
+            return
+        simulation_app.update()
+
+    raise TimeoutError("Timed out waiting for ROS 2 Action Graph context to become ready.")
+
+
 def _match_pattern(joint_name: str, pattern: str) -> bool:
     return bool(re.fullmatch(pattern, joint_name))
 
@@ -141,12 +158,16 @@ def _resolve_value(joint_name: str, spec, fallback: float) -> float:
     return float(fallback)
 
 
-def extract_joint_properties(env_yaml: dict, dof_names: Sequence[str]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def extract_joint_properties(
+    env_yaml: dict, dof_names: Sequence[str]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     actuator_cfg = env_yaml["scene"]["robot"]["actuators"]
     init_state = env_yaml["scene"]["robot"]["init_state"]
 
     stiffness = np.zeros(len(dof_names), dtype=np.float32)
     damping = np.zeros(len(dof_names), dtype=np.float32)
+    max_effort = np.full(len(dof_names), np.finfo(np.float32).max, dtype=np.float32)
+    max_vel = np.full(len(dof_names), np.finfo(np.float32).max, dtype=np.float32)
     default_pos = np.zeros(len(dof_names), dtype=np.float32)
     default_vel = np.zeros(len(dof_names), dtype=np.float32)
 
@@ -155,11 +176,21 @@ def extract_joint_properties(env_yaml: dict, dof_names: Sequence[str]) -> tuple[
             if any(_match_pattern(joint_name, expr) for expr in actuator["joint_names_expr"]):
                 stiffness[i] = _resolve_value(joint_name, actuator.get("stiffness"), 0.0)
                 damping[i] = _resolve_value(joint_name, actuator.get("damping"), 0.0)
+                max_effort[i] = _resolve_value(
+                    joint_name,
+                    actuator.get("effort_limit_sim", actuator.get("effort_limit")),
+                    np.finfo(np.float32).max,
+                )
+                max_vel[i] = _resolve_value(
+                    joint_name,
+                    actuator.get("velocity_limit_sim", actuator.get("velocity_limit")),
+                    np.finfo(np.float32).max,
+                )
                 break
         default_pos[i] = _resolve_value(joint_name, init_state["joint_pos"], 0.0)
         default_vel[i] = _resolve_value(joint_name, init_state["joint_vel"], 0.0)
 
-    return default_pos, default_vel, stiffness, damping
+    return default_pos, default_vel, stiffness, damping, max_effort, max_vel
 
 
 def main() -> None:
@@ -176,6 +207,7 @@ def main() -> None:
     parser.add_argument("--odom-frame-id", default="odom")
     parser.add_argument("--chassis-frame-id", default="pelvis")
     parser.add_argument("--log-interval", type=int, default=100)
+    parser.add_argument("--startup-warmup-steps", type=int, default=2000)
     args = parser.parse_args()
 
     log("Action Graph main start")
@@ -184,17 +216,19 @@ def main() -> None:
     try:
         import carb
         import omni.graph.core as og
+        import omni.kit.app
         import usdrt.Sdf
         from isaacsim.core.api import World
         from isaacsim.core.prims import SingleArticulation
-        from isaacsim.core.utils import extensions
         from isaacsim.core.utils.prims import define_prim
         from isaacsim.core.utils.types import ArticulationAction
 
         log("Enabling required extensions")
-        extensions.enable_extension("isaacsim.ros2.bridge")
+        extension_manager = omni.kit.app.get_app().get_extension_manager()
+        extension_manager.set_extension_enabled_immediate("isaacsim.ros2.bridge", True)
         for _ in range(30):
             simulation_app.update()
+
         log("Importing sensor/control modules")
         from omni.physx import get_physx_simulation_interface
 
@@ -225,13 +259,27 @@ def main() -> None:
         if dof_names != EXPECTED_DOF_NAMES:
             raise RuntimeError("Robot DoF order does not match the training env.")
 
-        default_pos, _, stiffness, damping = extract_joint_properties(env_yaml, dof_names)
+        default_pos, _, stiffness, damping, max_effort, max_vel = extract_joint_properties(env_yaml, dof_names)
         log("Applying articulation gains")
         robot.get_articulation_controller().set_effort_modes("force")
         get_physx_simulation_interface().flush_changes()
         robot.get_articulation_controller().switch_control_mode("position")
         robot._articulation_view.set_gains(stiffness, damping)
         get_physx_simulation_interface().flush_changes()
+        robot._articulation_view.set_max_efforts(max_effort)
+        robot._articulation_view.set_max_joint_velocities(max_vel)
+
+        articulation_prop = env_yaml["scene"]["robot"]["spawn"]["articulation_props"]
+        if articulation_prop.get("solver_position_iteration_count") is not None:
+            robot.set_solver_position_iteration_count(articulation_prop["solver_position_iteration_count"])
+        if articulation_prop.get("solver_velocity_iteration_count") is not None:
+            robot.set_solver_velocity_iteration_count(articulation_prop["solver_velocity_iteration_count"])
+        if articulation_prop.get("enabled_self_collisions") is not None:
+            robot.set_enabled_self_collisions(articulation_prop["enabled_self_collisions"])
+        if articulation_prop.get("sleep_threshold") is not None:
+            robot.set_sleep_threshold(articulation_prop["sleep_threshold"])
+        if articulation_prop.get("stabilization_threshold") is not None:
+            robot.set_stabilization_threshold(articulation_prop["stabilization_threshold"])
 
         robot.set_joint_positions(default_pos)
         robot.apply_action(ArticulationAction(joint_positions=default_pos.copy()))
@@ -290,6 +338,43 @@ def main() -> None:
                 ],
             },
         )
+        wait_for_ros2_context_ready(simulation_app, og)
+
+        # Run a startup warmup under the default pose so the ROS 2 graph sees
+        # real physics ticks before the measured rollout begins.
+        warmup_steps = max(args.startup_warmup_steps, 0)
+        if warmup_steps > 0:
+            log(f"Running ROS 2 physics warmup for {warmup_steps} steps")
+            world.play()
+            default_action = ArticulationAction(joint_positions=default_pos.copy())
+            for _ in range(warmup_steps):
+                robot.apply_action(default_action)
+                world.step(render=False)
+            world.pause()
+
+        log("Resetting world after ROS 2 bridge warmup")
+        world.reset()
+        robot.initialize()
+        robot.get_articulation_controller().set_effort_modes("force")
+        get_physx_simulation_interface().flush_changes()
+        robot.get_articulation_controller().switch_control_mode("position")
+        robot._articulation_view.set_gains(stiffness, damping)
+        get_physx_simulation_interface().flush_changes()
+        robot._articulation_view.set_max_efforts(max_effort)
+        robot._articulation_view.set_max_joint_velocities(max_vel)
+        if articulation_prop.get("solver_position_iteration_count") is not None:
+            robot.set_solver_position_iteration_count(articulation_prop["solver_position_iteration_count"])
+        if articulation_prop.get("solver_velocity_iteration_count") is not None:
+            robot.set_solver_velocity_iteration_count(articulation_prop["solver_velocity_iteration_count"])
+        if articulation_prop.get("enabled_self_collisions") is not None:
+            robot.set_enabled_self_collisions(articulation_prop["enabled_self_collisions"])
+        if articulation_prop.get("sleep_threshold") is not None:
+            robot.set_sleep_threshold(articulation_prop["sleep_threshold"])
+        if articulation_prop.get("stabilization_threshold") is not None:
+            robot.set_stabilization_threshold(articulation_prop["stabilization_threshold"])
+        robot.set_joint_positions(default_pos)
+        robot.apply_action(ArticulationAction(joint_positions=default_pos.copy()))
+
         world.play()
         log("Simulation running")
         for step in range(args.num_steps):

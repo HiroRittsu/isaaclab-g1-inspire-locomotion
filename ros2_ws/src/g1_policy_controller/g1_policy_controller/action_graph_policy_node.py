@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 from pathlib import Path
 from typing import Sequence
@@ -13,7 +14,6 @@ import yaml
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from builtin_interfaces.msg import Time as TimeMsg
-from message_filters import ApproximateTimeSynchronizer, Subscriber
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
@@ -171,6 +171,8 @@ class G1ActionGraphPolicyNode(Node):
         action_topic: str,
         cmd_vel_topic: str,
         log_interval: int,
+        debug_dump_path: Path | None,
+        debug_dump_interval: int,
     ) -> None:
         super().__init__("g1_action_graph_policy_controller")
         self.set_parameters([Parameter("use_sim_time", Parameter.Type.BOOL, True)])
@@ -193,11 +195,24 @@ class G1ActionGraphPolicyNode(Node):
         self.declare_parameter("target_heading", 0.0)
 
         self._log_interval = max(log_interval, 1)
+        self._debug_dump_interval = max(debug_dump_interval, 1)
         self._tick_count = 0
+        self._policy_tick = 0
         self._last_sim_time_s: float | None = None
         self._previous_action = np.zeros(len(ACTION_JOINT_NAMES), dtype=np.float32)
         self._current_action = np.zeros(len(ACTION_JOINT_NAMES), dtype=np.float32)
         self._latest_cmd_vel = Twist()
+        self._sim_dt = float(env_yaml["sim"]["dt"])
+        self._debug_dump_file = None
+        self._pending_joint_state: dict[int, JointState] = {}
+        self._pending_odometry: dict[int, Odometry] = {}
+        self._last_processed_stamp_ns: int = -1
+
+        if debug_dump_path is not None:
+            debug_dump_path = debug_dump_path.resolve()
+            debug_dump_path.parent.mkdir(parents=True, exist_ok=True)
+            self._debug_dump_file = debug_dump_path.open("w", encoding="utf-8")
+            self.get_logger().info(f"Writing debug dump to: {debug_dump_path}")
 
         self.get_logger().info(f"Loading TorchScript policy from: {policy_path}")
         self._policy = torch.jit.load(str(policy_path), map_location="cpu")
@@ -212,14 +227,8 @@ class G1ActionGraphPolicyNode(Node):
 
         self.create_subscription(Twist, cmd_vel_topic, self._on_cmd_vel, qos_profile=10)
         self._joint_pub = self.create_publisher(JointState, action_topic, qos_profile=sim_qos_profile)
-
-        self._joint_state_sub = Subscriber(self, JointState, joint_state_topic, qos_profile=sim_qos_profile)
-        self._odometry_sub = Subscriber(self, Odometry, odometry_topic, qos_profile=sim_qos_profile)
-        # Action Graph publishers are physics-synchronized, but the ROS2 bridge can still
-        # introduce stamp skew and message reordering. Allow up to two physics steps of slop
-        # and track the actual paired delta in logs.
-        self._sync = ApproximateTimeSynchronizer([self._joint_state_sub, self._odometry_sub], 10, 0.01)
-        self._sync.registerCallback(self._tick)
+        self.create_subscription(JointState, joint_state_topic, self._on_joint_state, qos_profile=sim_qos_profile)
+        self.create_subscription(Odometry, odometry_topic, self._on_odometry, qos_profile=sim_qos_profile)
 
     def _on_cmd_vel(self, msg: Twist) -> None:
         self._latest_cmd_vel = msg
@@ -237,6 +246,7 @@ class G1ActionGraphPolicyNode(Node):
             self._previous_action[:] = 0.0
             self._current_action[:] = 0.0
             self._tick_count = 0
+            self._policy_tick = 0
             return
         self._last_sim_time_s = sim_time_s
 
@@ -262,6 +272,39 @@ class G1ActionGraphPolicyNode(Node):
 
     def _time_msg_to_seconds(self, msg: TimeMsg) -> float:
         return float(msg.sec) + float(msg.nanosec) * 1.0e-9
+
+    def _time_msg_to_nanoseconds(self, msg: TimeMsg) -> int:
+        return int(msg.sec) * 1_000_000_000 + int(msg.nanosec)
+
+    def _prune_pending(self, current_stamp_ns: int) -> None:
+        # Keep only a small rolling window around the latest stamp.
+        cutoff = current_stamp_ns - int(20 * self._sim_dt * 1_000_000_000)
+        self._pending_joint_state = {k: v for k, v in self._pending_joint_state.items() if k >= cutoff}
+        self._pending_odometry = {k: v for k, v in self._pending_odometry.items() if k >= cutoff}
+
+    def _on_joint_state(self, msg: JointState) -> None:
+        stamp_ns = self._time_msg_to_nanoseconds(msg.header.stamp)
+        self._pending_joint_state[stamp_ns] = msg
+        self._prune_pending(stamp_ns)
+        self._try_process_stamp(stamp_ns)
+
+    def _on_odometry(self, msg: Odometry) -> None:
+        stamp_ns = self._time_msg_to_nanoseconds(msg.header.stamp)
+        self._pending_odometry[stamp_ns] = msg
+        self._prune_pending(stamp_ns)
+        self._try_process_stamp(stamp_ns)
+
+    def _try_process_stamp(self, stamp_ns: int) -> None:
+        if stamp_ns <= self._last_processed_stamp_ns:
+            return
+        joint_state = self._pending_joint_state.get(stamp_ns)
+        odometry = self._pending_odometry.get(stamp_ns)
+        if joint_state is None or odometry is None:
+            return
+        self._pending_joint_state.pop(stamp_ns, None)
+        self._pending_odometry.pop(stamp_ns, None)
+        self._last_processed_stamp_ns = stamp_ns
+        self._tick(joint_state, odometry)
 
     def _compute_observation(
         self, joint_state: JointState, odometry: Odometry, sim_time_s: float
@@ -320,27 +363,57 @@ class G1ActionGraphPolicyNode(Node):
         joint_msg.name = list(EXPECTED_DOF_NAMES)
         joint_msg.position = full_joint_targets.astype(float).tolist()
         self._joint_pub.publish(joint_msg)
+        return full_joint_targets
 
     def _tick(self, joint_state: JointState, odometry: Odometry) -> None:
         sim_time_s = self._time_msg_to_seconds(joint_state.header.stamp)
         obs, heading, lin_vel_b, ang_vel_b, gravity_b, command = self._compute_observation(joint_state, odometry, sim_time_s)
         odom_time_s = self._time_msg_to_seconds(odometry.header.stamp)
+        current_joint_pos, current_joint_vel = self._ordered_joint_state(joint_state)
+        obs_previous_action = self._previous_action.copy()
 
+        policy_updated = False
         if self._tick_count % self._decimation == 0:
             with torch.no_grad():
                 action = self._policy(torch.from_numpy(obs).view(1, -1)).view(-1).cpu().numpy().astype(np.float32)
             self._current_action = action
             self._previous_action = action.copy()
+            self._policy_tick += 1
+            policy_updated = True
 
         self._tick_count += 1
-        self._publish_action(joint_state.header.stamp)
+        full_joint_targets = self._publish_action(joint_state.header.stamp)
+
+        if (
+            self._debug_dump_file is not None
+            and policy_updated
+            and (self._policy_tick == 1 or self._policy_tick % self._debug_dump_interval == 0)
+        ):
+            debug_payload = {
+                "source": "action_graph_policy_node",
+                "sim_step": int(round(sim_time_s / self._sim_dt)),
+                "policy_tick": int(self._policy_tick),
+                "sim_time": float(sim_time_s),
+                "joint_pos_rel": (current_joint_pos - self._default_pos).astype(float).tolist(),
+                "joint_vel_rel": (current_joint_vel - self._default_vel).astype(float).tolist(),
+                "lin_vel_b": lin_vel_b.astype(float).tolist(),
+                "ang_vel_b": ang_vel_b.astype(float).tolist(),
+                "gravity_b": gravity_b.astype(float).tolist(),
+                "command": command.astype(float).tolist(),
+                "previous_action": obs_previous_action.astype(float).tolist(),
+                "raw_action": self._current_action.astype(float).tolist(),
+                "joint_target": full_joint_targets.astype(float).tolist(),
+            }
+            self._debug_dump_file.write(json.dumps(debug_payload, separators=(",", ":")) + "\n")
+            self._debug_dump_file.flush()
 
         if self._tick_count == 1 or self._tick_count % self._log_interval == 0:
             self.get_logger().info(
-                "tick=%d sim_time=%.3f stamp_delta=%.4f heading=%.3f action_norm=%.3f"
+                "tick=%d policy_tick=%d sim_time=%.3f stamp_delta=%.4f heading=%.3f action_norm=%.3f"
                 " lin_vel=[%.3f %.3f %.3f] ang_vel=[%.3f %.3f %.3f] cmd=[%.3f %.3f %.3f] grav_z=%.3f"
                 % (
                     self._tick_count,
+                    self._policy_tick,
                     sim_time_s,
                     abs(odom_time_s - sim_time_s),
                     heading,
@@ -368,6 +441,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--action-topic", default="/g1/joint_command")
     parser.add_argument("--cmd-vel-topic", default="/g1/cmd_vel")
     parser.add_argument("--log-interval", type=int, default=100)
+    parser.add_argument("--debug-dump-path", type=Path, default=None)
+    parser.add_argument("--debug-dump-interval", type=int, default=25)
     return parser.parse_args(argv)
 
 
@@ -382,10 +457,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         action_topic=args.action_topic,
         cmd_vel_topic=args.cmd_vel_topic,
         log_interval=args.log_interval,
+        debug_dump_path=args.debug_dump_path,
+        debug_dump_interval=args.debug_dump_interval,
     )
     try:
         rclpy.spin(node)
     finally:
+        if node._debug_dump_file is not None:
+            node._debug_dump_file.close()
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

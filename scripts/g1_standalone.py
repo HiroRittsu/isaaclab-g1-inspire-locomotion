@@ -2,6 +2,7 @@
 from isaacsim import SimulationApp
 
 import argparse
+import json
 import math
 import pathlib
 import re
@@ -260,6 +261,18 @@ def main():
         default=1,
         help="Value for /persistent/simulation/minFrameRate to reduce GUI-induced sim clamping.",
     )
+    parser.add_argument(
+        "--debug-dump-path",
+        type=pathlib.Path,
+        default=None,
+        help="Optional JSONL path for dumping observation/action/target snapshots.",
+    )
+    parser.add_argument(
+        "--debug-dump-interval",
+        type=int,
+        default=25,
+        help="Dump every N policy ticks when --debug-dump-path is set.",
+    )
     args = parser.parse_args()
 
     simulation_app = create_simulation_app(args.headless, args.record_video)
@@ -267,6 +280,7 @@ def main():
     video_writer = None
     rgb_annotator = None
     render_product = None
+    debug_dump_file = None
     try:
         log("Importing torch")
         import torch
@@ -337,6 +351,12 @@ def main():
             log("Opening video writer")
             video_writer = imageio.get_writer(str(video_path), fps=max(int(round(1.0 / render_dt)), 1))
 
+        if args.debug_dump_path is not None:
+            debug_dump_path = args.debug_dump_path.resolve()
+            debug_dump_path.parent.mkdir(parents=True, exist_ok=True)
+            debug_dump_file = debug_dump_path.open("w", encoding="utf-8")
+            log(f"Writing debug dump to: {debug_dump_path}")
+
         log("Loading TorchScript policy")
         policy = torch.jit.load(str(policy_path), map_location="cpu")
         policy.eval()
@@ -387,6 +407,7 @@ def main():
 
         previous_action = np.zeros(len(ACTION_JOINT_NAMES), dtype=np.float32)
         raw_action = np.zeros_like(previous_action)
+        policy_tick = 0
 
         log(f"Loaded policy from: {policy_path}")
         log(f"Loaded env yaml from: {env_yaml_path}")
@@ -424,6 +445,7 @@ def main():
             if step % decimation == 0:
                 current_joint_pos = np.asarray(robot.get_joint_positions(), dtype=np.float32)
                 current_joint_vel = np.asarray(robot.get_joint_velocities(), dtype=np.float32)
+                obs_previous_action = previous_action.copy()
 
                 obs = np.zeros(138, dtype=np.float32)
                 obs[0:3] = lin_vel_b.astype(np.float32)
@@ -432,15 +454,39 @@ def main():
                 obs[9:12] = command
                 obs[12:65] = current_joint_pos - default_pos
                 obs[65:118] = current_joint_vel - default_vel
-                obs[118:138] = previous_action
+                obs[118:138] = obs_previous_action
 
                 with torch.no_grad():
                     raw_action = policy(torch.from_numpy(obs).view(1, -1)).view(-1).cpu().numpy().astype(np.float32)
                 previous_action = raw_action.copy()
+                policy_tick += 1
 
             joint_targets = default_pos.copy()
             for action_idx, joint_idx in enumerate(action_joint_indices):
                 joint_targets[joint_idx] = default_pos[joint_idx] + action_scale * raw_action[action_idx]
+
+            if (
+                debug_dump_file is not None
+                and step % decimation == 0
+                and (policy_tick == 1 or policy_tick % max(args.debug_dump_interval, 1) == 0)
+            ):
+                debug_payload = {
+                    "source": "standalone",
+                    "sim_step": int(step),
+                    "policy_tick": int(policy_tick),
+                    "sim_time": float(step * sim_dt),
+                    "joint_pos_rel": (current_joint_pos - default_pos).astype(float).tolist(),
+                    "joint_vel_rel": (current_joint_vel - default_vel).astype(float).tolist(),
+                    "lin_vel_b": lin_vel_b.astype(float).tolist(),
+                    "ang_vel_b": ang_vel_b.astype(float).tolist(),
+                    "gravity_b": gravity_b.astype(float).tolist(),
+                    "command": command.astype(float).tolist(),
+                    "previous_action": obs_previous_action.astype(float).tolist(),
+                    "raw_action": raw_action.astype(float).tolist(),
+                    "joint_target": joint_targets.astype(float).tolist(),
+                }
+                debug_dump_file.write(json.dumps(debug_payload, separators=(",", ":")) + "\n")
+                debug_dump_file.flush()
 
             robot.apply_action(ArticulationAction(joint_positions=joint_targets))
             should_render_ui = (not args.headless) and (step % ui_render_interval == 0)
@@ -469,6 +515,8 @@ def main():
                     f"heading={current_heading:.3f}"
                 )
     finally:
+        if debug_dump_file is not None:
+            debug_dump_file.close()
         if rgb_annotator is not None:
             rgb_annotator.detach()
         if render_product is not None:
